@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/Column.tsx","./src/components/TaskCard.tsx","./src/components/TaskModal.tsx","./src/hooks/useTasks.ts","./src/lib/firebase.ts","./src/lib/taskService.ts","./src/types/index.ts"],"version":"5.9.3"}
