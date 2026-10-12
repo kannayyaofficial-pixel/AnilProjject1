@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import type { Tasks } from "../types";
 import { subscribeToTasks } from "../lib/taskService";
 
@@ -8,22 +8,18 @@ export function useTasks() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeToTasks((data) => {
-      setTasks(data);
+    setLoading(true);
+    const unsub = subscribeToTasks((taskList) => {
+      const map: Tasks = {};
+      for (const t of taskList) {
+        map[t.id] = t;
+      }
+      setTasks(map);
       setLoading(false);
       setError(null);
     });
     return unsub;
   }, []);
 
-  const refresh = useCallback(() => {
-    setLoading(true);
-    const unsub = subscribeToTasks((data) => {
-      setTasks(data);
-      setLoading(false);
-    });
-    return unsub;
-  }, []);
-
-  return { tasks, loading, error, refresh };
+  return { tasks, loading, error };
 }

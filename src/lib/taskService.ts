@@ -1,31 +1,40 @@
-import {
-  ref,
-  push,
-  set,
-  update,
-  remove,
-  onValue,
-  off,
-  serverTimestamp,
-} from "firebase/database";
-import { db } from "./firebase";
-import type { Task, TaskStatus, Tasks, Priority } from "../types";
+import { supabase } from "./firebase";
+import type { Task, TaskStatus, Priority } from "../types";
 
-const tasksRef = ref(db, "tasks");
+export interface TaskRow {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: Priority;
+  assignee: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
 
-export function subscribeToTasks(callback: (tasks: Tasks) => void): () => void {
-  const listener = onValue(
-    tasksRef,
-    (snapshot) => {
-      const val = snapshot.val() as Tasks | null;
-      callback(val ?? {});
-    },
-    (error) => {
-      console.error("Firebase subscribe error:", error);
-      callback({});
-    }
-  );
-  return () => off(tasksRef, "value", listener);
+function rowToTask(row: TaskRow): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    priority: row.priority,
+    assignee: row.assignee,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    order: row.sort_order,
+  };
+}
+
+export async function fetchTasks(): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .order("sort_order", { ascending: true });
+
+  if (error) throw error;
+  return (data as TaskRow[]).map(rowToTask);
 }
 
 export async function createTask(
@@ -33,53 +42,78 @@ export async function createTask(
   description: string,
   priority: Priority,
   assignee: string
-): Promise<string> {
-  const newRef = push(tasksRef);
-  const id = newRef.key;
-  if (!id) throw new Error("Failed to generate task ID");
+): Promise<Task> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      title: title.trim(),
+      description: description.trim(),
+      priority,
+      assignee: assignee.trim() || "Unassigned",
+      status: "todo",
+    })
+    .select()
+    .single();
 
-  const now = Date.now();
-  const task: Task = {
-    id,
-    title: title.trim(),
-    description: description.trim(),
-    status: "todo",
-    priority,
-    assignee: assignee.trim() || "Unassigned",
-    createdAt: now,
-    updatedAt: now,
-    order: now,
-  };
-
-  await set(newRef, task);
-  return id;
+  if (error) throw error;
+  return rowToTask(data as TaskRow);
 }
 
 export async function updateTaskStatus(
   taskId: string,
   status: TaskStatus
 ): Promise<void> {
-  const taskRef = ref(db, `tasks/${taskId}`);
-  await update(taskRef, {
-    status,
-    updatedAt: Date.now(),
-  });
+  const { error } = await supabase
+    .from("tasks")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", taskId);
+
+  if (error) throw error;
 }
 
 export async function updateTask(
   taskId: string,
   updates: Partial<Pick<Task, "title" | "description" | "priority" | "assignee">>
 ): Promise<void> {
-  const taskRef = ref(db, `tasks/${taskId}`);
-  await update(taskRef, {
-    ...updates,
-    updatedAt: Date.now(),
-  });
+  const { error } = await supabase
+    .from("tasks")
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq("id", taskId);
+
+  if (error) throw error;
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
-  const taskRef = ref(db, `tasks/${taskId}`);
-  await remove(taskRef);
+  const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+  if (error) throw error;
 }
 
-export { serverTimestamp };
+export function subscribeToTasks(callback: (tasks: Task[]) => void): () => void {
+  // Initial fetch
+  fetchTasks()
+    .then(callback)
+    .catch((err) => {
+      console.error("Failed to fetch tasks:", err);
+      callback([]);
+    });
+
+  // Realtime subscription
+  const channel = supabase
+    .channel("tasks-changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "tasks" },
+      () => {
+        fetchTasks()
+          .then(callback)
+          .catch((err) => {
+            console.error("Realtime refetch failed:", err);
+          });
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}

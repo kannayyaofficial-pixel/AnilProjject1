@@ -1,24 +1,16 @@
-import { initializeApp } from "firebase/app";
-import { getDatabase, type Database } from "firebase/database";
+import { createClient } from "@supabase/supabase-js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyC6VDFqCY56_XQ61y9pkwiOKWyb_zxmhng",
-  authDomain: "project-1-90901.firebaseapp.com",
-  databaseURL: "https://project-1-90901-default-rtdb.firebaseio.com",
-  projectId: "project-1-90901",
-  storageBucket: "project-1-90901.firebasestorage.app",
-  messagingSenderId: "771139791732",
-  appId: "1:771139791732:web:a3aa9489ad1fe19dc85a21",
-};
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const app = initializeApp(firebaseConfig);
-
-let db: Database;
-try {
-  db = getDatabase(app);
-} catch (err) {
-  console.error("Failed to initialize Firebase Realtime Database:", err);
-  throw err;
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    "Missing Supabase environment variables. Check your .env file for VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+  );
 }
 
-export { db };
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  realtime: {
+    params: { eventsPerSecond: 10 },
+  },
+});
